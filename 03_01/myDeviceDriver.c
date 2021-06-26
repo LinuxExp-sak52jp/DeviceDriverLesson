@@ -6,8 +6,16 @@
 #include <linux/cdev.h>
 #include <linux/sched.h>
 #include <linux/device.h>
+#include <linux/kthread.h>
+#include <linux/sched.h>
+#include <linux/semaphore.h>
+#include <linux/delay.h>
+#include <linux/signal.h>
+
 #include <asm/current.h>
 #include <asm/uaccess.h>
+
+#define USE_SEM
 
 MODULE_LICENSE("Dual BSD/GPL");
 
@@ -61,10 +69,72 @@ struct file_operations s_mydevice_fops = {
 	.write   = mydevice_write,
 };
 
+static struct task_struct *g_thd[2];
+
+static struct args_t {
+    int pid;
+    int idx;
+    struct semaphore* sem;
+} args[2];
+static wait_queue_head_t g_wq;
+static int g_cond = 0;
+static struct completion comp;
+static struct semaphore sem[2];
+
+static int _entry_func(void* arg)
+{
+    printk("@@@@ Enter _entry_func() @@@@\n");
+
+    struct args_t* a = (struct args_t*)arg;
+    
+    allow_signal(SIGKILL);
+
+    printk("--- Now into wait completion ---\n");
+#ifdef USE_SEM
+    int ret = down_interruptible(a->sem);
+    printk("--- down_interruptible() ret : %d ---\n", ret);
+#else
+    int ret = wait_for_completion_interruptible(&comp);
+    printk("--- wait_for_completion_interruptible() ret : %d ---\n", ret);
+#endif // USE_SEM
+
+    return 0;
+}
+
+static bool is_wait_by_sem(struct task_struct* t, struct semaphore* s)
+{
+    // From kernel/locking/semaphore.c
+    struct semaphore_waiter {
+        struct list_head list;
+        struct task_struct *task;
+        bool up;
+    };
+
+    // s->wait_list.nextはsemaphore_waiterのリンクリストを保持している
+    struct list_head* head = s->wait_list.next;
+    struct semaphore_waiter* w = (struct semaphore_waiter*)head;
+    int i;
+    bool ret = false;
+    // リストの終端はsemaphore_waiter.taskがNULLである事で判断できる（っぽい）
+    // 安全の為に10回の繰り返しで抜けるようにしておく。
+    // 失敗すると永久ループになってしまうので。
+    for (i = 0; (w->task != NULL) && (i < 10); i++) {
+        /* printk("-- w:%p,task:%p,up:%d --\n", w, w->task, w->up); */
+        if (w->task == t) {
+            ret = true;
+            break;
+        }
+        head = head->next;
+        w = (struct semaphore_waiter*)head;
+    }
+    /* printk("-- t:%p --\n", t); */
+    return ret;
+}
+
 /* ロード(insmod)時に呼ばれる関数 */
 static int mydevice_init(void)
 {
-	printk("mydevice_init\n");
+	printk("@@@@ Enter mydevice_init() @@@@\n");
 
 	int alloc_ret = 0;
 	int cdev_err = 0;
@@ -77,7 +147,8 @@ static int mydevice_init(void)
 		return -1;
 	}
 
-	/* 2. 取得したdev( = メジャー番号 + マイナー番号)からメジャー番号を取得して保持しておく */
+	/* 2. 取得したdev( = メジャー番号 + マイナー番号)からメジャー番号を
+       取得して保持しておく */
 	mydevice_major = MAJOR(dev);
 	dev = MKDEV(mydevice_major, MINOR_BASE);	/* 不要? */
 
@@ -93,6 +164,32 @@ static int mydevice_init(void)
 		return -1;
 	}
 
+    // g_thdを起こす
+    int i;
+#ifdef USE_SEM
+    for (i = 0; i < 2; i++)
+        sema_init(&sem[i], 0);
+#else
+    init_completion(&comp);
+#endif // USE_SEM
+    for (i = 0; i < 2; i++) {
+        char name[256];
+        sprintf(name, "Tkernel_%d", i+1);
+        g_thd[i] = kthread_create(_entry_func, (void*)&args[i], name);
+        printk("-- Thread ID:%d, Name:%s --\n", g_thd[i]->pid, name);
+        args[i].pid = g_thd[i]->pid;
+        args[i].idx = i;
+        args[i].sem = &sem[i];
+        wake_up_process(g_thd[i]);
+    }
+    mdelay(100);
+    int j;
+    for (i = 0; i < 2; i++) {
+        for (j = 0; j < 2; j++) {
+            int ret = (int)is_wait_by_sem(g_thd[i], &sem[j]);
+            printk("-- (i,j)=(%d,%d),is_wait_by_sem():%d --\n", i, j, ret);
+        }
+    }
 	return 0;
 }
 
@@ -100,7 +197,15 @@ static int mydevice_init(void)
 static void mydevice_exit(void)
 {
 	printk("mydevice_exit\n");
-
+#ifdef USE_SEM
+    int i;
+    for (i = 0; i < sizeof(args)/sizeof(struct args_t); i++) {
+        up(&sem[i]);
+    }
+#else
+    complete_all(&comp);
+#endif // USE_SEM
+    
 	dev_t dev = MKDEV(mydevice_major, MINOR_BASE);
 	
 	/* 5. このデバイスドライバ(cdev)をカーネルから取り除く */
