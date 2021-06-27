@@ -1,0 +1,9 @@
+-I.
+-I/usr/src/linux-hwe-5.4-headers-5.4.0-77/include
+-I/usr/src/linux-hwe-5.4-headers-5.4.0-77/arch/x86/include
+-I/usr/src/linux-hwe-5.4-headers-5.4.0-77/arch/x86/include/generated
+-I/usr/src/linux-hwe-5.4-headers-5.4.0-77/arch/x86/include/uapi
+-I/usr/src/linux-hwe-5.4-headers-5.4.0-77/arch/x86/include/generated/uapi
+-I/usr/src/linux-hwe-5.4-headers-5.4.0-77/include/uapi
+-I/usr/src/linux-hwe-5.4-headers-5.4.0-77/include/generated/uapi
+-std=gnu99
