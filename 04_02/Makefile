@@ -3,7 +3,8 @@ CFILES = myDeviceDriver.c
 obj-m := MyDeviceModule.o
 MyDeviceModule-objs := $(CFILES:.c=.o)
 
-ccflags-y += -std=gnu99 -Wall -Wno-declaration-after-statement
+#ccflags-y += -std=gnu99 -Wall -Wno-declaration-after-statement
+ccflags-y += -std=gnu99
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(shell pwd) modules

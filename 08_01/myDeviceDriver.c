@@ -4,8 +4,9 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/proc_fs.h>
-#include <asm/uaccess.h>
+//#include <asm/uaccess.h>
 #include <linux/debugfs.h>
+#include <linux/printk.h>
 
 /*** このデバイスに関する情報 ***/
 MODULE_LICENSE("Dual BSD/GPL");

@@ -7,8 +7,10 @@
 #include <linux/sched.h>
 #include <linux/device.h>
 #include <linux/slab.h>
-#include <asm/current.h>
-#include <asm/uaccess.h>
+#include <linux/uaccess.h>
+#include <linux/spinlock.h>
+//#include <asm/current.h>
+//#include <asm/uaccess.h>
 
 /*** このデバイスに関する情報 ***/
 MODULE_LICENSE("Dual BSD/GPL");
@@ -24,6 +26,11 @@ static struct class *mydevice_class = NULL;	/* デバイスドライバのクラ
 struct _mydevice_file_data {
 	unsigned char buffer[NUM_BUFFER];
 };
+
+static char buffer[256];
+static int buffer_pos = 0;
+static char buffer2[256];
+static spinlock_t lock;
 
 /* open時に呼ばれる関数 */
 static int mydevice_open(struct inode *inode, struct file *file)
@@ -64,13 +71,41 @@ static int mydevice_close(struct inode *inode, struct file *file)
 static ssize_t mydevice_read(struct file *filp, char __user *buf, size_t count, loff_t *f_pos)
 {
 	printk("mydevice_read");
+    if (*f_pos == strlen(buffer))
+        return 0;
+
+    unsigned pos = *f_pos;
+    pos += count;
+    if (pos > strlen(buffer))
+        pos = strlen(buffer);
+    count = pos-*f_pos;
+
+    unsigned flags;
+    
+    int rem = copy_to_user(buf, buffer, count);
+
+    spin_lock_irqsave(&lock, flags);
+    for (int i = 0; i < 256; i++)
+        buffer2[i] = buffer[i];
+    spin_unlock_irqrestore(&lock, flags);
+    for (int i = 0; i < 256; i++)
+        printk("%d:%d\n", i, (int)buffer2[i]);
+
+    count -= rem; pos -= rem;
+    *f_pos = pos;
+
+    return count;
+
+#if 0
 	if(count > NUM_BUFFER) count = NUM_BUFFER;
 
 	struct _mydevice_file_data *p = filp->private_data;
 	if (copy_to_user(buf, p->buffer, count) != 0) {
 		return -EFAULT;
 	}
+
 	return count;
+#endif //0
 }
 
 /* write時に呼ばれる関数 */
@@ -78,10 +113,24 @@ static ssize_t mydevice_write(struct file *filp, const char __user *buf, size_t 
 {
 	printk("mydevice_write");
 
+    if (buffer_pos == sizeof(buffer)-1)
+        return 0;
+    
+#if 0
 	struct _mydevice_file_data *p = filp->private_data;
 	if (copy_from_user(p->buffer, buf, count) != 0) {
 		return -EFAULT;
 	}
+#endif // 0
+
+    unsigned new_pos = buffer_pos+count;
+    if (new_pos > sizeof(buffer)-1)
+        new_pos = sizeof(buffer)-1;
+    count = new_pos-buffer_pos;
+
+    strncpy_from_user(&buffer[buffer_pos], buf, count);
+    buffer_pos = new_pos;
+    
 	return count;
 }
 
@@ -138,6 +187,10 @@ static int mydevice_init(void)
 	for (int minor = MINOR_BASE; minor < MINOR_BASE + MINOR_NUM; minor++) {
 		device_create(mydevice_class, NULL, MKDEV(mydevice_major, minor), NULL, "mydevice%d", minor);
 	}
+
+    memset((void*)buffer, 0, sizeof(buffer));
+
+    //spin_lock_init(&lock);
 
 	return 0;
 }
