@@ -39,6 +39,24 @@ struct _mydevice_file_data {
     unsigned char buffer[NUM_BUFFER];
 };
 
+static struct pci_dev* get_pci_dev(void)
+{
+    
+    int domain = 0; // あなたのドメイン
+    int bus = 0; // あなたのバス
+    int device = 0; // あなたのデバイス
+    int function = 0; // あなたのファンクション
+    struct pci_dev* dev = NULL;
+    dev = pci_get_domain_bus_and_slot(domain,bus,
+                                      PCI_DEVFN(device, function));
+
+    if (dev == NULL) {
+        // デバイスが見つからなかった場合の処理
+    } else {
+        // デバイスが見つかった場合の処理
+    }
+}
+
 /* open時に呼ばれる関数 */
 static int mydevice_open(struct inode *inode, struct file *file)
 {
