@@ -39,13 +39,14 @@ struct _mydevice_file_data {
     unsigned char buffer[NUM_BUFFER];
 };
 
+static int domain = 0;   // あなたのドメイン
+static int bus = 0;      // あなたのバス
+static int device = 0;   // あなたのデバイス
+static int function = 0; // あなたのファンクション
+
 static struct pci_dev* get_pci_dev(void)
 {
     
-    int domain = 0; // あなたのドメイン
-    int bus = 0; // あなたのバス
-    int device = 0; // あなたのデバイス
-    int function = 0; // あなたのファンクション
     struct pci_dev* dev = NULL;
     dev = pci_get_domain_bus_and_slot(domain,bus,
                                       PCI_DEVFN(device, function));
